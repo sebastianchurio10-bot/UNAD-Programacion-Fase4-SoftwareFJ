@@ -110,6 +110,45 @@ class Servicio(EntidadSistema, ABC):
         return f"[{self.codigo}] {self.obtener_descripcion()} | Estado: {estado_disp}"
 
 
+    # ------------------------------------------------------------------
+    # Método agregado para cubrir la sobrecarga de métodos del Anexo 3.
+    # Funciona como calcular_costo, pero admite un parámetro opcional extra
+    # (recargo) y devuelve un desglose completo en un diccionario.
+    # ------------------------------------------------------------------
+    def calcular_costo_detallado(self, descuento: float = 0.0, impuesto: float = 0.19, recargo: float = 0.0) -> dict:
+        """Devuelve un diccionario con: subtotal, descuento aplicado, recargo, impuesto y total."""
+        try:
+            # Validación: el impuesto debe ser una fracción entre 0 (0%) y 1 (100%)
+            if not (0.0 <= impuesto <= 1.0):
+                raise ValueError("El impuesto debe estar entre 0 y 1.")
+            # Validación: el recargo es opcional y no puede ser negativo
+            if recargo < 0:
+                raise ValueError("El recargo no puede ser negativo.")
+
+            # Cantidad de unidades del servicio: horas (sala/asesoría) o días (equipo); 1 si no define ninguna
+            cantidad = getattr(self, "horas", getattr(self, "dias", 1))
+
+            # Subtotal sin descuento: costo base multiplicado por la cantidad de unidades
+            subtotal = self.costo_base * cantidad
+            # Valor en dinero del descuento aplicado sobre el subtotal
+            descuento_aplicado = subtotal * descuento
+            # Base sobre la que se calcula el impuesto: subtotal menos descuento, más el recargo
+            base_gravable = subtotal - descuento_aplicado + recargo
+            # Valor en dinero del impuesto sobre la base gravable
+            valor_impuesto = base_gravable * impuesto
+
+            # Desglose completo del costo, redondeado a 2 decimales
+            return {
+                "subtotal": round(subtotal, 2),
+                "descuento_aplicado": round(descuento_aplicado, 2),
+                "recargo": round(recargo, 2),
+                "impuesto": round(valor_impuesto, 2),
+                "total": round(base_gravable + valor_impuesto, 2)
+            }
+        except ValueError as ve:
+            # Encadenamiento de excepciones: "raise from" conserva la causa original del error
+            raise ServicioError(f"Parámetros inválidos al calcular el costo detallado: {ve}") from ve
+
 class ReservaSala(Servicio):
     def __init__(self, codigo: str, nombre: str, costo_base: float, capacidad: int, horas: int):
         super().__init__(codigo, nombre, costo_base)
@@ -494,6 +533,8 @@ class SoftwareFJApp:
             self.ent_res_id.delete(0, tk.END)
             messagebox.showinfo("Reserva Confirmada", f"Reserva {reserva.id_reserva} confirmada.\nTotal (IVA incluido): ${reserva.costo_total:,.2f}")
         except ReservaError as re:
+            # Se registra el error de la interfaz en app_log.txt con tipo ERROR
+            registrar_log(f"Error en la interfaz al crear la reserva: {re}", "ERROR")
             messagebox.showerror("Error en Reserva", str(re))
 
     def cancelar_reserva_ui(self):
@@ -506,6 +547,8 @@ class SoftwareFJApp:
             self._actualizar_vistas()
             messagebox.showinfo("Reserva Cancelada", f"La reserva {reserva.id_reserva} fue cancelada y el servicio quedó disponible.")
         except ReservaError as re:
+            # Se registra el error de la interfaz en app_log.txt con tipo ERROR
+            registrar_log(f"Error en la interfaz al cancelar la reserva: {re}", "ERROR")
             messagebox.showerror("Error al Cancelar", str(re))
 
     def _actualizar_vistas(self):
